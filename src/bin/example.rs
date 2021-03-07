@@ -3,10 +3,11 @@ extern crate miracl_core;
 use miracl_core::rand::{RAND_impl, RAND};
 
 use functional_encryption_schemes::dmcfe_ip::*;
+use num_bigint::BigInt;
 
 fn main() {
-    let num_clients: usize = 10;
-    let bound = BigNum::new_int(10000);
+    let num_clients: usize = 5;
+    let bound = BigInt::from(10000);
     let mut clients: Vec<Dmcfe> = Vec::with_capacity(num_clients);
     let mut pub_keys: Vec<G1> = Vec::with_capacity(num_clients);
     let mut ciphers: Vec<G1> = Vec::with_capacity(num_clients);
@@ -35,20 +36,21 @@ fn main() {
     }
 
     let label = "dmcfe-label";
-    let mut x: Vec<BigNum> = Vec::with_capacity(num_clients);
-    let y = vec![BigNum::new_int(1); num_clients];
+    let mut x: Vec<BigInt> = Vec::with_capacity(num_clients);
+    let y = vec![BigInt::from(1); num_clients];
 
     for i in 0..num_clients {
-        x.push(BigNum::new_int(i as isize));
+        x.push(BigInt::from(i*1000))
     }
 
     for i in 0..num_clients {
         ciphers.push(clients[i].encrypt(&x[i], label));
-        fe_key.push(clients[i].derive_fe_key_share(&y));
+        fe_key.push(clients[i].derive_fe_key_share(&y[..]));
     }
+    println!("decrypt starts");
     use std::time::Instant;
     let now = Instant::now();
-    let xy = Dmcfe::decrypt(&ciphers, &y, &fe_key, label, &bound);
+    let xy = Dmcfe::decrypt(&ciphers, &y[..], &fe_key, label, &bound);
     let elapsed = now.elapsed();
     println!("Elapsed: {:.2?}", elapsed);
 

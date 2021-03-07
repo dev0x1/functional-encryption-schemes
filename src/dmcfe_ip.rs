@@ -8,6 +8,14 @@ use miracl_core::bls12381::ecp2::ECP2;
 use miracl_core::bls12381::fp12::FP12;
 use miracl_core::bls12381::pair;
 use miracl_core::bls12381::rom;
+/* use  miracl_core::bn254::big;
+use miracl_core::bn254::big::BIG;
+use miracl_core::bn254::ecp;
+use miracl_core::bn254::ecp::ECP;
+use miracl_core::bn254::ecp2::ECP2;
+use miracl_core::bn254::fp12::FP12;
+use miracl_core::bn254::pair;
+use miracl_core::bn254::rom; */
 use miracl_core::hash256::HASH256;
 use miracl_core::rand::RAND;
 use num_bigint::{BigInt, Sign};
@@ -48,7 +56,7 @@ impl BigIntMatrix2x2 {
             for j in 0..2 {
                 //temp.data[i*2+j] = BigInt::from_bytes_be(Sign::Plus, &rand_bytes);
                 //temp.data[i*2+j] = BigInt::from_signed_bytes_be(&rand_bytes);
-                temp.data[i * 2 + j] = BigInt::from(1);
+                temp.data[i * 2 + j] = BigInt::from(1); //FIXME
             }
         }
         temp
@@ -149,7 +157,8 @@ impl Dmcfe {
         }
     }
 
-    pub fn encrypt(&self, x: &BigNum, label: &str) -> G1 {
+    pub fn encrypt(&self, x: &BigInt, label: &str) -> G1 {
+        let x = BigNum::fromstring(x.to_str_radix(16));
         let mut cipher: G1 = G1::new();
         cipher.inf();
 
@@ -160,18 +169,18 @@ impl Dmcfe {
             cipher.add(&h);
         }
         let mut g = G1::generator();
-        g = g.mul(x);
+        g = g.mul(&x);
         cipher.add(&g);
 
         cipher
     }
 
-    pub fn derive_fe_key_share(&self, y: &[BigNum]) -> G2Vector {
+    pub fn derive_fe_key_share(&self, y: &[BigInt]) -> G2Vector {
         let mut fe_key_share: G2Vector = vec![G2::new(); 2];
         let mut hs: G2Vector = vec![G2::new(); 2];
         let mut y_str = "".to_string();
         for yi in y.iter() {
-            y_str = y_str + " " + &yi.tostring();
+            y_str = y_str + " " + &yi.to_str_radix(16);
         }
 
         for i in 0..2 {
@@ -189,7 +198,8 @@ impl Dmcfe {
                 fe_key_share[i].add(&temp);
             }
 
-            let temp = BigNum::modmul(&y[self.index], &self.s[i], &CURVE_ORDER);
+            let temp = BigNum::fromstring(y[self.index].to_str_radix(16));
+            let temp = BigNum::modmul(&temp, &self.s[i], &CURVE_ORDER);
             h = G2::generator();
             h = h.mul(&temp);
             fe_key_share[i].add(&h);
@@ -199,11 +209,11 @@ impl Dmcfe {
 
     pub fn decrypt(
         ciphers: &[G1],
-        y: &[BigNum],
+        y: &[BigInt],
         key_shares: &[G2Vector],
         label: &str,
-        bound: &BigNum,
-    ) -> Option<BigNum> {
+        bound: &BigInt,
+    ) -> Option<BigInt> {
         let mut keys_sum: G2Vector = vec![G2::new(); 2];
         let ylen: isize = y.len().try_into().unwrap();
 
@@ -222,11 +232,11 @@ impl Dmcfe {
 
         ciphers_sum.inf();
 
-        for (i, &yi) in y.iter().enumerate() {
-            let mut temp = BigNum::new_copy(&yi);
+        for i in 0..y.len() {
+            let mut temp = BigNum::fromstring(y[i].to_str_radix(16));
             cipher_i.copy(&ciphers[i]);
             temp.rmod(&CURVE_ORDER);
-            cipher_i = cipher_i.mul(&yi);
+            cipher_i = cipher_i.mul(&temp);
             ciphers_sum.add(&cipher_i);
         }
 
@@ -250,7 +260,7 @@ impl Dmcfe {
         pair = pair::fexp(&pair);
 
         //dlog
-        let mut result_bound = BigNum::new_copy(&bound);
+        let mut result_bound = BigNum::fromstring(bound.to_str_radix(16));
         result_bound = result_bound.powmod(&BigNum::new_int(2), &CURVE_ORDER);
         result_bound = BigNum::modmul(&result_bound, &BigNum::new_int(ylen), &CURVE_ORDER);
 
@@ -273,12 +283,12 @@ fn hash_to_g2(data: &str) -> G2 {
 }
 
 use std::ops::Add;
-fn baby_step_giant_step(h: &GT, g: &GT, bound: &BigNum) -> Option<BigNum> {
+fn baby_step_giant_step(h: &GT, g: &GT, bound: &BigNum) -> Option<BigInt> {
     let mut table = HashMap::new();
     let mut pow_zero = GT::new();
     pow_zero.one();
     if pow_zero.equals(&h) {
-        return Some(BigNum::new_int(0));
+        return Some(BigInt::from(0));
     }
 
     let b = BigInt::from_str_radix(&bound.tostring(), 16).unwrap();
@@ -309,8 +319,10 @@ fn baby_step_giant_step(h: &GT, g: &GT, bound: &BigNum) -> Option<BigNum> {
         // positive solution
         match table.get(&x.tostring()) {
             Some(value) => {
-                let temp = BigNum::modmul(&i, &m, &CURVE_ORDER);
-                return Some(BigNum::modadd(&value, &temp, &CURVE_ORDER));
+                let mut temp = BigNum::modmul(&i, &m, &CURVE_ORDER);
+                temp = BigNum::modadd(&value, &temp, &CURVE_ORDER);
+                let temp = BigInt::from_str_radix(&temp.tostring(), 16).unwrap();
+                return Some(temp);
             }
             None => {
                 x.mul(&z);
@@ -323,6 +335,7 @@ fn baby_step_giant_step(h: &GT, g: &GT, bound: &BigNum) -> Option<BigNum> {
                 let mut temp = BigNum::modmul(&i, &m, &CURVE_ORDER);
                 temp = BigNum::modadd(&value, &temp, &CURVE_ORDER);
                 temp = BigNum::modneg(&temp, &CURVE_ORDER);
+                let temp = BigInt::from_str_radix(&temp.tostring(), 16).unwrap();
                 return Some(temp);
             }
             None => {
@@ -353,7 +366,7 @@ mod tests {
 
         let h = g.pow(&x);
         if let Some(res) = baby_step_giant_step(&h, &g, &bound) {
-            println!("res={}", res.tostring());
+            println!("res={}", res);
         }
         println!("g={}", g.tostring());
         println!("x={}", x.tostring());
